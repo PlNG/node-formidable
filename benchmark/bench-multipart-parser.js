@@ -1,69 +1,41 @@
 require("../test/common");
-var multipartParser = require("../lib/multipart_parser"),
-	MultipartParser = multipartParser.MultipartParser,
-	parser = new MultipartParser(),
-	Buffer = require("buffer").Buffer,
-	boundary = "-----------------------------168072824752491622650073",
-	mb = 100,
-	createMultipartBuffer = function (boundary, size) {
-		"use strict";
-		var head = "--" + boundary + "\r\n" + 'content-disposition: form-data; name="field1"\r\n' + "\r\n",
-			tail = "\r\n--" + boundary + "--\r\n",
-			buffer = new Buffer(size);
-		buffer.write(head, "ascii", 0);
-		buffer.write(tail, "ascii", buffer.length - tail.length);
-		return buffer;
-	},
-	buffer = createMultipartBuffer(boundary, mb * 1048576),
-	callbacks = {
-		partBegin: -1,
-		partEnd: -1,
-		headerField: -1,
-		headerValue: -1,
-		partData: -1,
-		end: -1
-	},
-	start,
-	nparsed,
-	duration,
-	mbPerSec;
-parser.initWithBoundary(boundary);
-parser.onHeaderField = function () {
+var server,
+	http = require("http"),
+	formidable = require("formidable"),
+	util = require("util");
+server = http.createServer(function (req, res) {
 	"use strict";
-	callbacks.headerField += 1;
-};
-parser.onHeaderValue = function () {
-	"use strict";
-	callbacks.headerValue += 1;
-};
-parser.onPartBegin = function () {
-	"use strict";
-	callbacks.partBegin += 1;
-};
-parser.onPartData = function () {
-	"use strict";
-	callbacks.partData += 1;
-};
-parser.onPartEnd = function () {
-	"use strict";
-	callbacks.partEnd += 1;
-};
-parser.onEnd = function () {
-	"use strict";
-	callbacks.end += 1;
-};
-start = +new Date();
-nparsed = parser.write(buffer);
-duration = +new Date() - start;
-mbPerSec = (mb / (duration / 1E3)).toFixed(2);
-process.on("exit", function () {
-	"use strict";
-	var k;
-	for (k in callbacks) {
-		if (callbacks.hasOwnProperty(k)) {
-			assert.equal(0, callbacks[k], k + " count off by " + callbacks[k]);
+	if (req.url === "/") {
+		res.writeHead(200, {
+			"content-type": "text/html"
+		});
+		res.end('<form action="/post" method="post"><input type="text" name="title"><br><input type="text" name="data[foo][]"><br><input type="submit" value="Submit"></form>');
+	} else {
+		if (req.url === "/post") {
+			var form = new formidable.IncomingForm(),
+				fields = [];
+			form.on("error", function (err) {
+				res.writeHead(200, {
+					"content-type": "text/plain"
+				});
+				res.end("error:\n\n" + util.inspect(err));
+			}).on("field", function (field, value) {
+				console.log(field, value);
+				fields.push([field, value]);
+			}).on("end", function () {
+				console.log("-> post done");
+				res.writeHead(200, {
+					"content-type": "text/plain"
+				});
+				res.end("received fields:\n\n " + util.inspect(fields));
+			});
+			form.parse(req);
+		} else {
+			res.writeHead(404, {
+				"content-type": "text/plain"
+			});
+			res.end("404");
 		}
 	}
-});
-console.log(mbPerSec + " mb/sec");
-assert.equal(nparsed, buffer.length);
+}).listen(TEST_PORT);
+console.log("listening on http://localhost:" + TEST_PORT + "/");
